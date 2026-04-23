@@ -265,7 +265,7 @@ export default function Fees() {
                   </th>
                 ))}
                 <th className='px-3 sm:px-5 py-3 text-left font-semibold text-gray-700 bg-green-50 text-xs sm:text-sm'>
-                  Total (PKR)
+                  Total (AFN)
                 </th>
                 <th className='px-3 sm:px-5 py-3 text-center font-semibold text-gray-700 text-xs sm:text-sm'>
                   Actions
@@ -301,7 +301,7 @@ export default function Fees() {
                       </td>
                     ))}
                     <td className='px-3 sm:px-5 py-3 font-semibold text-green-700 bg-green-50 text-xs sm:text-sm'>
-                      ₨ {calculateTotal(fee).toFixed(2)}
+                      ؋ {calculateTotal(fee).toFixed(2)}
                     </td>
                     <td className='px-3 sm:px-5 py-3 text-center'>
                       {role === 'admin' ? (
@@ -404,7 +404,7 @@ export default function Fees() {
                         />
                         <input
                           type='number'
-                          placeholder={`${sub.label} fee (PKR)`}
+                          placeholder={`${sub.label} fee (AFN)`}
                           className='w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm'
                           value={form.subjectFees[sub.id] || ''}
                           onChange={(e) =>
@@ -426,7 +426,7 @@ export default function Fees() {
                     </span>
                   </div>
                   <div className='text-xl sm:text-2xl font-bold text-green-700'>
-                    ₨ {formTotal().toFixed(2)}
+                    ؋ {formTotal().toFixed(2)}
                   </div>
                 </div>
                 <p className='text-xs text-gray-400 mt-1'>

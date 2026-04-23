@@ -1,4 +1,5 @@
 // src/components/Students.jsx
+import { useState } from 'react';
 import {
   collection,
   addDoc,
@@ -7,8 +8,6 @@ import {
   doc,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { getDocs } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
 import {
   FaUserPlus,
   FaUsers,
@@ -35,7 +34,7 @@ const AVAILABLE_COURSES = [
 ];
 
 export default function Students() {
-  const { students, setStudents } = useData();
+  const { students } = useData(); // ← only students from context (reactive)
   const { role } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -49,22 +48,7 @@ export default function Students() {
     courses: [],
   });
 
-  const fetchStudents = async () => {
-    try {
-      const querySnapshot = await getDocs(collection(db, 'students'));
-      const data = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setStudents(data);
-    } catch (error) {
-      console.error('Error fetching students:', error);
-    }
-  };
-
-  useEffect(() => {
-    fetchStudents();
-  }, []);
+  // No fetchStudents – real‑time listener in DataContext updates students automatically
 
   const handleSubmit = async () => {
     if (!form.fullname.trim()) return;
@@ -77,7 +61,6 @@ export default function Students() {
           phone: form.phone,
           courses: form.courses,
         });
-        await fetchStudents();
       } else {
         await addDoc(collection(db, 'students'), {
           fullname: form.fullname,
@@ -85,7 +68,6 @@ export default function Students() {
           phone: form.phone,
           courses: form.courses,
         });
-        await fetchStudents();
       }
       resetForm();
       setShowModal(false);
@@ -103,7 +85,6 @@ export default function Students() {
     if (studentToDelete) {
       try {
         await deleteDoc(doc(db, 'students', studentToDelete.id));
-        await fetchStudents();
       } catch (error) {
         console.error('Error deleting student:', error);
       } finally {
@@ -155,6 +136,7 @@ export default function Students() {
 
   return (
     <div className='px-4 sm:px-6 py-4 sm:py-6'>
+      {/* same JSX as before – no changes */}
       <div className='flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6'>
         <div>
           <h1 className='text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-2'>
@@ -271,7 +253,7 @@ export default function Students() {
         </div>
       </div>
 
-      {/* Add/Edit Modal */}
+      {/* Add/Edit Modal – same as before */}
       {showModal && (
         <div className='fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto'>
           <div className='bg-white rounded-2xl shadow-xl w-full max-w-md my-8 mx-4'>
@@ -298,8 +280,8 @@ export default function Students() {
                   />
                   <input
                     type='text'
-                    placeholder='e.g., Ahmed Raza'
-                    className='w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm'
+                    placeholder='e.g., Ahmad Raza'
+                    className='w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 focus:ring-2 focus:ring-blue-500'
                     value={form.fullname}
                     onChange={(e) =>
                       setForm({ ...form, fullname: e.target.value })
@@ -319,7 +301,7 @@ export default function Students() {
                   <input
                     type='text'
                     placeholder='e.g., Raza Khan'
-                    className='w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm'
+                    className='w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2'
                     value={form.fathername}
                     onChange={(e) =>
                       setForm({ ...form, fathername: e.target.value })
@@ -338,8 +320,8 @@ export default function Students() {
                   />
                   <input
                     type='text'
-                    placeholder='+92 XXX XXXXXXX'
-                    className='w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm'
+                    placeholder='+93 XXX XXXXXXX'
+                    className='w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2'
                     value={form.phone}
                     onChange={(e) =>
                       setForm({ ...form, phone: e.target.value })
@@ -361,7 +343,7 @@ export default function Students() {
                         type='checkbox'
                         checked={form.courses.includes(course.id)}
                         onChange={() => toggleCourse(course.id)}
-                        className='rounded border-gray-300 text-blue-600 focus:ring-blue-500'
+                        className='rounded border-gray-300 text-blue-600'
                       />
                       {course.label}
                     </label>
@@ -387,7 +369,6 @@ export default function Students() {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
       <DeleteConfirmationModal
         isOpen={deleteModalOpen}
         onClose={() => setDeleteModalOpen(false)}

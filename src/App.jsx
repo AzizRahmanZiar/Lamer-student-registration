@@ -1,6 +1,6 @@
 // App.jsx
-import { Routes, Route } from 'react-router-dom'; // only Routes, Route
-import { DataProvider } from './context/DataContext'; // 👈 import your data context
+import { Routes, Route } from 'react-router-dom';
+import { DataProvider } from './context/DataContext';
 import Unauthorized from './components/Unauthorized';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -10,15 +10,13 @@ import Register from './pages/Register';
 
 import Dashboard from './pages/Dashboard';
 import Students from './pages/Students';
-import Fees from './pages/Fees';
+import MonthlyFeeEntry from './pages/MonthlyFeeEntry'; // 👈 new monthly fee component
 import AdminApprovals from './pages/AdminApprovals';
 
 function App() {
   return (
     <AuthProvider>
       <DataProvider>
-        {' '}
-        {/* 👈 wrap with DataProvider */}
         <Routes>
           <Route path='/login' element={<Login />} />
           <Route path='/register' element={<Register />} />
@@ -34,7 +32,7 @@ function App() {
             <Route index element={<Dashboard />} />
             <Route path='dashboard' element={<Dashboard />} />
             <Route path='students' element={<Students />} />
-            <Route path='fees' element={<Fees />} />
+            <Route path='monthly-fees' element={<MonthlyFeeEntry />} />{' '}
             <Route
               path='approvals'
               element={
