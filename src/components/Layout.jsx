@@ -154,7 +154,7 @@ export default function Layout() {
         >
           <div className='flex justify-between items-center p-4 border-b border-gray-100 flex-shrink-0'>
             <div className='flex items-center gap-2'>
-              <FaChalkboard size={24} className='text-blue-600' />
+              <img src='/logo.png' alt='Logo' className='h-8 w-auto' />
               <div>
                 <p className='font-bold text-gray-800'>Lamer Gereshk</p>
                 <p className='text-xs text-gray-500'>Academy</p>
