@@ -9,7 +9,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { getDocs } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   FaPlusCircle,
   FaBook,
@@ -52,6 +52,18 @@ export default function Fees() {
     subjectFees: {},
   });
 
+  // Searchable input states
+  const [studentSearchInput, setStudentSearchInput] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const suggestionRef = useRef(null);
+
+  // Filter students based on search input
+  const filteredStudents = students.filter((student) =>
+    `${student.fullname} ${student.fathername || ''}`
+      .toLowerCase()
+      .includes(studentSearchInput.toLowerCase())
+  );
+
   const fetchFees = async () => {
     try {
       const querySnapshot = await getDocs(collection(db, 'fees'));
@@ -69,31 +81,39 @@ export default function Fees() {
     fetchFees();
   }, []);
 
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (suggestionRef.current && !suggestionRef.current.contains(event.target)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const resetModal = () => {
     setEditingId(null);
     setSelectedStudentId('');
     setAvailableSubjects([]);
+    setStudentSearchInput('');
+    setShowSuggestions(false);
     setForm({ studentId: '', fullname: '', fathername: '', subjectFees: {} });
   };
 
-  const handleStudentChange = (studentId) => {
-    setSelectedStudentId(studentId);
-    const student = students.find((s) => String(s.id) === String(studentId));
-
-    if (student) {
-      const enrolled = Array.isArray(student.courses) ? student.courses : [];
-      const matched = ALL_SUBJECTS.filter((sub) => enrolled.includes(sub.id));
-      setAvailableSubjects(matched);
-      setForm({
-        studentId: student.id,
-        fullname: student.fullname,
-        fathername: student.fathername || '',
-        subjectFees: {},
-      });
-    } else {
-      setAvailableSubjects([]);
-      setForm({ studentId: '', fullname: '', fathername: '', subjectFees: {} });
-    }
+  const handleStudentSelect = (student) => {
+    setSelectedStudentId(student.id);
+    setStudentSearchInput(`${student.fullname} ${student.fathername || ''}`);
+    setShowSuggestions(false);
+    const enrolled = Array.isArray(student.courses) ? student.courses : [];
+    const matched = ALL_SUBJECTS.filter((sub) => enrolled.includes(sub.id));
+    setAvailableSubjects(matched);
+    setForm({
+      studentId: student.id,
+      fullname: student.fullname,
+      fathername: student.fathername || '',
+      subjectFees: {},
+    });
   };
 
   const handleSubjectFeeChange = (subjectId, value) => {
@@ -162,6 +182,7 @@ export default function Fees() {
         subjectFees,
       });
       setSelectedStudentId(fee.studentId);
+      setStudentSearchInput(`${fee.fullname} ${fee.fathername || ''}`);
     } else {
       setAvailableSubjects(ALL_SUBJECTS);
       const subjectFees = {};
@@ -175,6 +196,7 @@ export default function Fees() {
         subjectFees,
       });
       setSelectedStudentId(fee.studentId);
+      setStudentSearchInput(`${fee.fullname} ${fee.fathername || ''}`);
     }
     setShowModal(true);
   };
@@ -291,7 +313,7 @@ export default function Fees() {
                     </td>
                     <td className='px-3 sm:px-5 py-3 text-gray-600 text-xs sm:text-sm'>
                       {fee.fathername || '—'}
-                    </td>
+                    <tr>
                     {subjectFields.map((sub) => (
                       <td
                         key={sub.id}
@@ -354,31 +376,61 @@ export default function Fees() {
             <div className='p-4 sm:p-6 max-h-[70vh] overflow-y-auto'>
               <div className='mb-4'>
                 <label className='block text-sm font-medium text-gray-700 mb-1'>
-                  Select Student *
+                  Search Student *
                 </label>
-                <div className='relative'>
-                  <FaUser
-                    className='absolute left-3 top-1/2 -translate-y-1/2 text-gray-400'
-                    size={16}
-                  />
-                  <select
-                    className='w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm'
-                    value={selectedStudentId}
-                    onChange={(e) => handleStudentChange(e.target.value)}
-                  >
-                    <option value=''>-- Choose a student --</option>
-                    {students.map((student) => (
-                      <option key={student.id} value={student.id}>
-                        {student.fullname} (courses:{' '}
-                        {student.courses?.join(', ') || 'none'})
-                      </option>
-                    ))}
-                  </select>
+                <div ref={suggestionRef} className='relative'>
+                  <div className='relative'>
+                    <FaUser
+                      className='absolute left-3 top-1/2 -translate-y-1/2 text-gray-400'
+                      size={16}
+                    />
+                    <input
+                      type='text'
+                      className='w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm'
+                      placeholder='Start typing student name or father name...'
+                      value={studentSearchInput}
+                      onChange={(e) => {
+                        setStudentSearchInput(e.target.value);
+                        setShowSuggestions(true);
+                        if (e.target.value === '') {
+                          setSelectedStudentId('');
+                          setForm({ ...form, studentId: '', fullname: '', fathername: '', subjectFees: {} });
+                          setAvailableSubjects([]);
+                        }
+                      }}
+                      onFocus={() => setShowSuggestions(true)}
+                    />
+                  </div>
+                  {showSuggestions && studentSearchInput.trim() !== '' && (
+                    <div className='absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto'>
+                      {filteredStudents.length === 0 ? (
+                        <div className='px-4 py-2 text-gray-500 text-sm'>
+                          No matching students
+                        </div>
+                      ) : (
+                        filteredStudents.map((student) => (
+                          <div
+                            key={student.id}
+                            className='px-4 py-2 hover:bg-green-50 cursor-pointer border-b border-gray-100 last:border-0'
+                            onClick={() => handleStudentSelect(student)}
+                          >
+                            <div className='font-medium text-gray-800'>
+                              {student.fullname}
+                            </div>
+                            <div className='text-xs text-gray-500'>
+                              {student.fathername || '—'} •{' '}
+                              {student.courses?.length || 0} courses
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
                 {form.fullname && (
                   <div className='mt-2 text-sm text-gray-600'>
-                    <span className='font-medium'>Father:</span>{' '}
-                    {form.fathername}
+                    <span className='font-medium'>Selected:</span> {form.fullname} 
+                    {form.fathername && ` (${form.fathername})`}
                   </div>
                 )}
               </div>

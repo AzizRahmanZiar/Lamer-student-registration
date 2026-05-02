@@ -1,14 +1,16 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+// src/context/DataContext.js
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   collection,
-  onSnapshot,
+  getDocs,
   addDoc,
   updateDoc,
   deleteDoc,
   doc,
+  onSnapshot,
   serverTimestamp,
-  query,
-  where,
+  getDoc,
+  setDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 
@@ -20,141 +22,207 @@ export function useData() {
 
 export function DataProvider({ children }) {
   const [students, setStudents] = useState([]);
+  const [fees, setFees] = useState([]);
   const [monthlyFees, setMonthlyFees] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [monthlyDueDay, setMonthlyDueDay] = useState(10);
 
-  // Real‑time listeners
+  // Real-time listeners
   useEffect(() => {
-    const unsubStudents = onSnapshot(
-      collection(db, 'students'),
-      (snapshot) => {
-        const data = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        setStudents(data);
-      },
-      (err) => setError(err),
-    );
+    // Students listener
+    const unsubStudents = onSnapshot(collection(db, 'students'), (snapshot) => {
+      const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      setStudents(data);
+    });
 
-    const unsubFees = onSnapshot(
-      collection(db, 'monthly_fees'),
+    // Monthly fees listener
+    const unsubMonthlyFees = onSnapshot(
+      collection(db, 'monthlyFees'),
       (snapshot) => {
         const data = snapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
         }));
         setMonthlyFees(data);
-        setLoading(false);
       },
-      (err) => setError(err),
     );
+
+    // Fees (static fee structures) listener
+    const unsubFees = onSnapshot(collection(db, 'fees'), (snapshot) => {
+      const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      setFees(data);
+    });
+
+    // Load settings
+    const loadSettings = async () => {
+      try {
+        const settingsRef = doc(db, 'settings', 'global');
+        const snap = await getDoc(settingsRef);
+        if (snap.exists()) {
+          setMonthlyDueDay(snap.data().monthlyDueDay || 10);
+        }
+      } catch (error) {
+        console.error('Error loading settings:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadSettings();
 
     return () => {
       unsubStudents();
+      unsubMonthlyFees();
       unsubFees();
     };
   }, []);
 
-  // Helper: current month/year
+  // Helper: get current month and year
   const getCurrentMonthYear = () => {
     const now = new Date();
+    const monthNames = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
     return {
-      month: now.toLocaleString('default', { month: 'long' }),
+      month: monthNames[now.getMonth()],
       year: now.getFullYear(),
+      monthIndex: now.getMonth(),
     };
   };
 
-  // Total collected for a specific month/year
-  const getMonthlyCollected = (month, year) => {
+  // Helper: calculate total fee from fee structure
+  const calculateTotal = (feeRecord) => {
+    const subjects = [
+      'calligraphy',
+      'english',
+      'math',
+      'physics',
+      'computer',
+      'arabic',
+    ];
+    let total = 0;
+    subjects.forEach((sub) => {
+      total += parseFloat(feeRecord[sub]) || 0;
+    });
+    return total;
+  };
+
+  // Get current month collected amount
+  const getCurrentMonthCollected = () => {
+    const { month, year } = getCurrentMonthYear();
     return monthlyFees
       .filter(
         (fee) =>
           fee.month === month && fee.year === year && fee.status === 'paid',
       )
-      .reduce((sum, fee) => sum + fee.paidAmount, 0);
+      .reduce((sum, fee) => sum + (fee.paidAmount || 0), 0);
   };
 
-  // Total collected this month
-  const getCurrentMonthCollected = () => {
-    const { month, year } = getCurrentMonthYear();
-    return getMonthlyCollected(month, year);
-  };
-
-  // Students who haven't paid for current month
+  // Get pending students for current month
   const getPendingStudents = () => {
     const { month, year } = getCurrentMonthYear();
     const paidStudentIds = monthlyFees
-      .filter((fee) => fee.month === month && fee.year === year)
+      .filter(
+        (fee) =>
+          fee.month === month && fee.year === year && fee.status === 'paid',
+      )
       .map((fee) => fee.studentId);
-    return students.filter((s) => !paidStudentIds.includes(s.id));
+    return students.filter((student) => !paidStudentIds.includes(student.id));
   };
 
-  // Monthly history for charts
+  // Get monthly history (last 6 months summary)
   const getMonthlyHistory = () => {
     const history = {};
     monthlyFees.forEach((fee) => {
-      if (fee.status === 'paid') {
-        const key = `${fee.month} ${fee.year}`;
-        history[key] = (history[key] || 0) + fee.paidAmount;
+      const key = `${fee.month} ${fee.year}`;
+      if (!history[key]) {
+        history[key] = { collected: 0, expected: 0, count: 0 };
       }
+      if (fee.status === 'paid') {
+        history[key].collected += fee.paidAmount || 0;
+      }
+      history[key].expected += fee.totalAmount || 0;
+      history[key].count++;
     });
-    return history;
+    return Object.entries(history)
+      .map(([period, data]) => ({ period, ...data }))
+      .slice(-6);
   };
 
-  // Total paid by a student across all months
-  const getStudentTotalPaid = (studentId) => {
-    return monthlyFees
-      .filter((fee) => fee.studentId === studentId && fee.status === 'paid')
-      .reduce((sum, fee) => sum + fee.paidAmount, 0);
-  };
-
-  // CRUD operations
+  // CRUD for monthly fees
   const addMonthlyFee = async (feeData) => {
     try {
-      await addDoc(collection(db, 'monthly_fees'), {
+      await addDoc(collection(db, 'monthlyFees'), {
         ...feeData,
         createdAt: serverTimestamp(),
       });
-    } catch (err) {
-      console.error('Error adding fee:', err);
-      throw err;
+    } catch (error) {
+      console.error('Error adding monthly fee:', error);
+      throw error;
     }
   };
 
   const updateMonthlyFee = async (id, feeData) => {
     try {
-      const feeRef = doc(db, 'monthly_fees', id);
-      await updateDoc(feeRef, { ...feeData, updatedAt: serverTimestamp() });
-    } catch (err) {
-      console.error('Error updating fee:', err);
-      throw err;
+      const ref = doc(db, 'monthlyFees', id);
+      await updateDoc(ref, {
+        ...feeData,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error('Error updating monthly fee:', error);
+      throw error;
     }
   };
 
   const deleteMonthlyFee = async (id) => {
     try {
-      await deleteDoc(doc(db, 'monthly_fees', id));
-    } catch (err) {
-      console.error('Error deleting fee:', err);
-      throw err;
+      await deleteDoc(doc(db, 'monthlyFees', id));
+    } catch (error) {
+      console.error('Error deleting monthly fee:', error);
+      throw error;
+    }
+  };
+
+  // Update monthly due day setting
+  const updateMonthlyDueDay = async (day) => {
+    try {
+      const settingsRef = doc(db, 'settings', 'global');
+      await setDoc(settingsRef, { monthlyDueDay: day }, { merge: true });
+      setMonthlyDueDay(day);
+    } catch (error) {
+      console.error('Error updating due day:', error);
+      throw error;
     }
   };
 
   const value = {
     students,
+    fees,
     monthlyFees,
     loading,
-    error,
+    monthlyDueDay,
+    calculateTotal,
     getCurrentMonthCollected,
     getPendingStudents,
     getMonthlyHistory,
-    getStudentTotalPaid,
+    getCurrentMonthYear,
     addMonthlyFee,
     updateMonthlyFee,
     deleteMonthlyFee,
-    getCurrentMonthYear,
+    updateMonthlyDueDay,
+    setFees, // for Fees component
   };
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

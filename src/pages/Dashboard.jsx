@@ -1,3 +1,4 @@
+// src/components/Dashboard.jsx
 import { useData } from '../context/DataContext';
 import {
   FaUsers,
@@ -38,6 +39,14 @@ export default function Dashboard() {
   const mostPopularCourse = Object.entries(courseCounts).sort(
     (a, b) => b[1] - a[1],
   )[0];
+
+  // Delayed payments for current month
+  const delayedPayments = monthlyFees.filter(
+    (fee) =>
+      fee.month === currentMonth &&
+      fee.year === currentYear &&
+      fee.delayDays > 0,
+  );
 
   if (loading) {
     return (
@@ -154,54 +163,88 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Most Enrolled Courses */}
+        {/* Delayed Payments Card */}
         <div className='bg-white rounded-xl shadow-sm border border-gray-200 p-5'>
           <h2 className='text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2'>
-            <FaBookOpen className='text-blue-600' />
-            Most Enrolled Courses
+            <FaExclamationTriangle className='text-red-600' />
+            Delayed Payments – {currentMonth} {currentYear}
           </h2>
-          {students.length === 0 ? (
-            <p className='text-gray-400 text-center py-6'>
-              No students added yet
+          {delayedPayments.length === 0 ? (
+            <p className='text-green-600 text-sm text-center py-6'>
+              ✅ No delayed payments this month!
             </p>
           ) : (
-            <div className='space-y-3'>
-              {Object.entries(courseCounts)
-                .sort((a, b) => b[1] - a[1])
-                .map(([courseId, count]) => {
-                  const label =
-                    courseId.charAt(0).toUpperCase() + courseId.slice(1);
-                  const maxCount = Math.max(...Object.values(courseCounts), 1);
-                  const percentage = (count / maxCount) * 100;
-                  return (
-                    <div key={courseId}>
-                      <div className='flex justify-between text-sm mb-1'>
-                        <span>{label}</span>
-                        <span className='font-medium'>
-                          {count} student{count !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-                      <div className='w-full bg-gray-200 rounded-full h-2'>
-                        <div
-                          className='bg-blue-500 h-2 rounded-full'
-                          style={{ width: `${percentage}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          )}
-          {mostPopularCourse && (
-            <div className='mt-4 pt-3 border-t text-sm text-gray-600'>
-              🔥 Most popular:{' '}
-              <span className='font-semibold text-blue-600'>
-                {mostPopularCourse[0]}
-              </span>{' '}
-              ({mostPopularCourse[1]} students)
+            <div className='space-y-2 max-h-64 overflow-y-auto'>
+              {delayedPayments.map((fee) => (
+                <div
+                  key={fee.id}
+                  className='flex justify-between items-center p-2 bg-red-50 rounded-lg'
+                >
+                  <div>
+                    <p className='font-medium text-gray-800'>
+                      {fee.studentName}
+                    </p>
+                    <p className='text-xs text-red-600'>
+                      Delayed by {fee.delayDays} days
+                    </p>
+                  </div>
+                  <span className='text-xs bg-red-200 text-red-800 px-2 py-1 rounded-full'>
+                    Late
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </div>
+      </div>
+
+      {/* Third row: Most Enrolled Courses (full width) */}
+      <div className='mt-6 bg-white rounded-xl shadow-sm border border-gray-200 p-5'>
+        <h2 className='text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2'>
+          <FaBookOpen className='text-blue-600' />
+          Most Enrolled Courses
+        </h2>
+        {students.length === 0 ? (
+          <p className='text-gray-400 text-center py-6'>
+            No students added yet
+          </p>
+        ) : (
+          <div className='space-y-3'>
+            {Object.entries(courseCounts)
+              .sort((a, b) => b[1] - a[1])
+              .map(([courseId, count]) => {
+                const label =
+                  courseId.charAt(0).toUpperCase() + courseId.slice(1);
+                const maxCount = Math.max(...Object.values(courseCounts), 1);
+                const percentage = (count / maxCount) * 100;
+                return (
+                  <div key={courseId}>
+                    <div className='flex justify-between text-sm mb-1'>
+                      <span>{label}</span>
+                      <span className='font-medium'>
+                        {count} student{count !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div className='w-full bg-gray-200 rounded-full h-2'>
+                      <div
+                        className='bg-blue-500 h-2 rounded-full'
+                        style={{ width: `${percentage}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        )}
+        {mostPopularCourse && (
+          <div className='mt-4 pt-3 border-t text-sm text-gray-600'>
+            🔥 Most popular:{' '}
+            <span className='font-semibold text-blue-600'>
+              {mostPopularCourse[0]}
+            </span>{' '}
+            ({mostPopularCourse[1]} students)
+          </div>
+        )}
       </div>
 
       {/* Recent Payments Table */}

@@ -9,6 +9,7 @@ import {
   FaMoneyBillWave,
   FaTrash,
   FaEdit,
+  FaClock,
 } from 'react-icons/fa';
 import { useData } from '../context/DataContext';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
@@ -22,6 +23,28 @@ const SUBJECTS = [
   { id: 'arabic', label: 'Arabic' },
 ];
 
+// Helper: get last day of month
+const getLastDayOfMonth = (year, monthIndex) => {
+  return new Date(year, monthIndex + 1, 0).getDate();
+};
+
+// Compute due date based on month/year and configured due day
+const computeDueDate = (year, monthIndex, dueDay) => {
+  const lastDay = getLastDayOfMonth(year, monthIndex);
+  const actualDay = Math.min(dueDay, lastDay);
+  return new Date(year, monthIndex, actualDay);
+};
+
+// Calculate delay days (only if paid after due date)
+const calculateDelay = (paymentDate, dueDate) => {
+  if (!paymentDate || !dueDate) return null;
+  const payDate = new Date(paymentDate);
+  const due = new Date(dueDate);
+  if (payDate <= due) return 0;
+  const diffTime = Math.abs(payDate - due);
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+};
+
 export default function MonthlyFeeEntry() {
   const {
     students,
@@ -30,11 +53,27 @@ export default function MonthlyFeeEntry() {
     updateMonthlyFee,
     deleteMonthlyFee,
     getCurrentMonthYear,
+    monthlyDueDay,
   } = useData();
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [feeToDelete, setFeeToDelete] = useState(null);
+
+  const monthNames = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
 
   const [form, setForm] = useState({
     studentId: '',
@@ -43,6 +82,7 @@ export default function MonthlyFeeEntry() {
     year: getCurrentMonthYear().year,
     subjectFees: {},
     paidAmount: 0,
+    paymentDate: new Date().toISOString().split('T')[0],
   });
 
   const resetForm = () => {
@@ -54,6 +94,7 @@ export default function MonthlyFeeEntry() {
       year: getCurrentMonthYear().year,
       subjectFees: {},
       paidAmount: 0,
+      paymentDate: new Date().toISOString().split('T')[0],
     });
   };
 
@@ -85,6 +126,12 @@ export default function MonthlyFeeEntry() {
     0,
   );
 
+  // Compute due date for current form
+  const monthIndex = monthNames.indexOf(form.month);
+  const dueDateObj = computeDueDate(form.year, monthIndex, monthlyDueDay);
+  const dueDateStr = dueDateObj.toLocaleDateString();
+  const delayDays = calculateDelay(form.paymentDate, dueDateObj);
+
   const handleSubmit = async () => {
     if (!form.studentId) return;
 
@@ -92,6 +139,7 @@ export default function MonthlyFeeEntry() {
       id,
       fee,
     }));
+
     const feeData = {
       studentId: form.studentId,
       studentName: form.studentName,
@@ -100,13 +148,15 @@ export default function MonthlyFeeEntry() {
       subjects: subjectsArray,
       totalAmount,
       paidAmount: form.paidAmount,
+      paymentDate: form.paymentDate,
+      dueDate: dueDateObj.toISOString(),
+      delayDays: delayDays,
       status:
         form.paidAmount >= totalAmount
           ? 'paid'
           : form.paidAmount > 0
             ? 'partial'
             : 'unpaid',
-      paymentDate: new Date(),
     };
 
     try {
@@ -128,6 +178,9 @@ export default function MonthlyFeeEntry() {
     fee.subjects.forEach((sub) => {
       subjectFees[sub.id] = sub.fee;
     });
+    const paymentDateStr = fee.paymentDate
+      ? new Date(fee.paymentDate).toISOString().split('T')[0]
+      : new Date().toISOString().split('T')[0];
     setForm({
       studentId: fee.studentId,
       studentName: fee.studentName,
@@ -135,6 +188,7 @@ export default function MonthlyFeeEntry() {
       year: fee.year,
       subjectFees,
       paidAmount: fee.paidAmount,
+      paymentDate: paymentDateStr,
     });
     setShowModal(true);
   };
@@ -161,7 +215,7 @@ export default function MonthlyFeeEntry() {
             Monthly Fee Collection
           </h1>
           <p className='text-gray-500 text-xs sm:text-sm mt-1'>
-            Record monthly payments for each student
+            Record monthly payments with due date and delay tracking
           </p>
         </div>
         <button
@@ -178,11 +232,14 @@ export default function MonthlyFeeEntry() {
       {/* Fees Table */}
       <div className='bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden'>
         <div className='overflow-x-auto'>
-          <table className='w-full text-sm min-w-[700px]'>
+          <table className='w-full text-sm min-w-[1000px]'>
             <thead className='bg-gray-50'>
               <tr>
                 <th className='px-5 py-3 text-left'>Student</th>
                 <th className='px-5 py-3 text-left'>Month/Year</th>
+                <th className='px-5 py-3 text-left'>Due Date</th>
+                <th className='px-5 py-3 text-left'>Payment Date</th>
+                <th className='px-5 py-3 text-left'>Delay</th>
                 <th className='px-5 py-3 text-left'>Total Fee</th>
                 <th className='px-5 py-3 text-left'>Paid</th>
                 <th className='px-5 py-3 text-left'>Status</th>
@@ -190,52 +247,76 @@ export default function MonthlyFeeEntry() {
               </tr>
             </thead>
             <tbody>
-              {monthlyFees.map((fee) => (
-                <tr
-                  key={fee.id}
-                  className='border-b border-gray-100 hover:bg-gray-50'
-                >
-                  <td className='px-5 py-3 font-medium'>{fee.studentName}</td>
-                  <td className='px-5 py-3'>
-                    {fee.month} {fee.year}
-                  </td>
-                  <td className='px-5 py-3'>؋ {fee.totalAmount.toFixed(2)}</td>
-                  <td className='px-5 py-3'>؋ {fee.paidAmount.toFixed(2)}</td>
-                  <td className='px-5 py-3'>
-                    <span
-                      className={`text-xs px-2 py-1 rounded-full ${
-                        fee.status === 'paid'
-                          ? 'bg-green-100 text-green-800'
-                          : fee.status === 'partial'
-                            ? 'bg-yellow-100 text-yellow-800'
-                            : 'bg-red-100 text-red-800'
-                      }`}
-                    >
-                      {fee.status}
-                    </span>
-                  </td>
-                  <td className='px-5 py-3 text-center'>
-                    <div className='flex justify-center gap-2'>
-                      <button
-                        onClick={() => handleEdit(fee)}
-                        className='text-blue-600 hover:text-blue-800'
+              {monthlyFees.map((fee) => {
+                const displayDueDate = fee.dueDate
+                  ? new Date(fee.dueDate).toLocaleDateString()
+                  : '—';
+                const displayPayDate = fee.paymentDate
+                  ? new Date(fee.paymentDate).toLocaleDateString()
+                  : '—';
+                const delay = fee.delayDays !== undefined ? fee.delayDays : '—';
+                return (
+                  <tr
+                    key={fee.id}
+                    className='border-b border-gray-100 hover:bg-gray-50'
+                  >
+                    <td className='px-5 py-3 font-medium'>{fee.studentName}</td>
+                    <td className='px-5 py-3'>
+                      {fee.month} {fee.year}
+                    </td>
+                    <td className='px-5 py-3'>{displayDueDate}</td>
+                    <td className='px-5 py-3'>{displayPayDate}</td>
+                    <td className='px-5 py-3'>
+                      {delay !== '—' && delay > 0 ? (
+                        <span className='text-red-600 font-medium'>
+                          {delay} days
+                        </span>
+                      ) : delay === 0 ? (
+                        <span className='text-green-600'>On time</span>
+                      ) : (
+                        <span className='text-gray-400'>—</span>
+                      )}
+                    </td>
+                    <td className='px-5 py-3'>
+                      ؋ {fee.totalAmount.toFixed(2)}
+                    </td>
+                    <td className='px-5 py-3'>؋ {fee.paidAmount.toFixed(2)}</td>
+                    <td className='px-5 py-3'>
+                      <span
+                        className={`text-xs px-2 py-1 rounded-full ${
+                          fee.status === 'paid'
+                            ? 'bg-green-100 text-green-800'
+                            : fee.status === 'partial'
+                              ? 'bg-yellow-100 text-yellow-800'
+                              : 'bg-red-100 text-red-800'
+                        }`}
                       >
-                        <FaEdit size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteClick(fee)}
-                        className='text-red-600 hover:text-red-800'
-                      >
-                        <FaTrash size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        {fee.status}
+                      </span>
+                    </td>
+                    <td className='px-5 py-3 text-center'>
+                      <div className='flex justify-center gap-2'>
+                        <button
+                          onClick={() => handleEdit(fee)}
+                          className='text-blue-600 hover:text-blue-800'
+                        >
+                          <FaEdit size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteClick(fee)}
+                          className='text-red-600 hover:text-red-800'
+                        >
+                          <FaTrash size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {monthlyFees.length === 0 && (
                 <tr>
                   <td
-                    colSpan='6'
+                    colSpan='9'
                     className='px-5 py-12 text-center text-gray-400'
                   >
                     No monthly fee records yet
@@ -307,20 +388,7 @@ export default function MonthlyFeeEntry() {
                         setForm({ ...form, month: e.target.value })
                       }
                     >
-                      {[
-                        'January',
-                        'February',
-                        'March',
-                        'April',
-                        'May',
-                        'June',
-                        'July',
-                        'August',
-                        'September',
-                        'October',
-                        'November',
-                        'December',
-                      ].map((m) => (
+                      {monthNames.map((m) => (
                         <option key={m}>{m}</option>
                       ))}
                     </select>
@@ -340,6 +408,51 @@ export default function MonthlyFeeEntry() {
                         year:
                           parseInt(e.target.value) || new Date().getFullYear(),
                       })
+                    }
+                  />
+                </div>
+              </div>
+
+              {/* Due Date & Delay Info */}
+              <div className='bg-blue-50 p-3 rounded-lg'>
+                <div className='flex justify-between items-center text-sm mb-1'>
+                  <span className='font-medium text-gray-700'>Due Date:</span>
+                  <span className='font-semibold text-blue-800'>
+                    {dueDateStr}
+                  </span>
+                </div>
+                <div className='flex justify-between items-center text-sm'>
+                  <span className='font-medium text-gray-700'>
+                    Delay if paid today:
+                  </span>
+                  <span
+                    className={`font-semibold ${delayDays > 0 ? 'text-red-600' : 'text-green-600'}`}
+                  >
+                    {delayDays > 0
+                      ? `${delayDays} days late`
+                      : delayDays === 0
+                        ? 'On time'
+                        : '—'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Payment Date */}
+              <div>
+                <label className='block text-sm font-medium text-gray-700 mb-1'>
+                  Payment Date *
+                </label>
+                <div className='relative'>
+                  <FaClock
+                    className='absolute left-3 top-1/2 -translate-y-1/2 text-gray-400'
+                    size={14}
+                  />
+                  <input
+                    type='date'
+                    className='w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2'
+                    value={form.paymentDate}
+                    onChange={(e) =>
+                      setForm({ ...form, paymentDate: e.target.value })
                     }
                   />
                 </div>
@@ -407,7 +520,7 @@ export default function MonthlyFeeEntry() {
                 </div>
               </div>
 
-              {/* Total */}
+              {/* Total & Status */}
               <div className='bg-gray-50 rounded-lg p-4'>
                 <div className='flex justify-between items-center'>
                   <span className='font-medium'>Total Fee:</span>
