@@ -1,87 +1,80 @@
-// src/components/Settings.jsx
-import { useState, useEffect } from 'react';
-import { FaCalendarAlt, FaSave } from 'react-icons/fa';
+import { FaUsers, FaToggleOn, FaToggleOff } from 'react-icons/fa';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
+import PageHeader from '../components/PageHeader';
+import Card from '../components/Card';
+import Table from '../components/Table';
 
 export default function Settings() {
   const { role } = useAuth();
-  const { monthlyDueDay, updateMonthlyDueDay } = useData();
-  const [dueDay, setDueDay] = useState(monthlyDueDay);
-  const [saved, setSaved] = useState(false);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    setDueDay(monthlyDueDay);
-  }, [monthlyDueDay]);
+  const { teachers, teacherPermissions, updateTeacherPermission } = useData();
 
   if (role !== 'admin') {
-    return (
-      <div className='p-6 text-center text-red-600'>
-        Access denied. Admin only.
-      </div>
-    );
+    return <div className="p-6 text-center text-red-600">Access denied. Admin only.</div>;
   }
 
-  const handleSave = async () => {
-    setLoading(true);
+  const handleTogglePermission = async (teacherUid, currentValue) => {
     try {
-      await updateMonthlyDueDay(dueDay);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      await updateTeacherPermission(teacherUid, !currentValue);
     } catch (error) {
-      console.error('Error saving settings:', error);
-      alert('Failed to save settings.');
-    } finally {
-      setLoading(false);
+      alert('Failed to update permission.');
     }
   };
 
   return (
-    <div className='px-4 sm:px-6 py-4 sm:py-6 max-w-2xl mx-auto'>
-      <div className='mb-6'>
-        <h1 className='text-2xl font-bold text-gray-800 flex items-center gap-2'>
-          <FaCalendarAlt className='text-indigo-600' size={28} />
-          Fee Settings
-        </h1>
-        <p className='text-gray-500 text-sm mt-1'>
-          Configure monthly payment deadline
+    <div className="px-4 sm:px-6 py-4 sm:py-6 max-w-4xl mx-auto">
+      <PageHeader
+        title="Settings"
+        subtitle="Manage teacher permissions"
+      />
+
+      {/* Teacher Permissions */}
+      <Card>
+        <h3 className="text-md font-semibold text-gray-700 mb-3 flex items-center gap-2">
+          <FaUsers className="text-indigo-600" /> Teacher Permissions
+        </h3>
+        <p className="text-sm text-gray-500 mb-4">
+          Grant or revoke edit/delete permissions for each teacher. When enabled, the teacher can edit and delete their own records (students and fees). When disabled, they can only view and add records.
         </p>
-      </div>
-
-      <div className='bg-white rounded-xl shadow-sm border border-gray-200 p-6'>
-        <div className='mb-6'>
-          <label className='block text-sm font-medium text-gray-700 mb-2'>
-            Monthly Payment Due Day (1-31)
-          </label>
-          <input
-            type='number'
-            min='1'
-            max='31'
-            value={dueDay}
-            onChange={(e) => setDueDay(parseInt(e.target.value) || 10)}
-            className='w-full sm:w-48 border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500'
-          />
-          <p className='text-xs text-gray-400 mt-1'>
-            The day of each month when fees are expected to be paid. If the day
-            exceeds month length, the last day of the month will be used.
-          </p>
-        </div>
-
-        <button
-          onClick={handleSave}
-          disabled={loading}
-          className='bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-5 py-2 rounded-lg shadow-sm flex items-center gap-2 font-medium'
-        >
-          <FaSave size={16} /> {loading ? 'Saving...' : 'Save Settings'}
-        </button>
-
-        {saved && (
-          <div className='mt-4 p-3 bg-green-100 text-green-700 rounded-lg text-sm'>
-            ✅ Settings saved successfully
-          </div>
+        {teachers.length === 0 ? (
+          <p className="text-gray-400 text-sm">No teachers registered yet.</p>
+        ) : (
+          <Table headers={['Email', 'Permission', 'Action']}>
+            {teachers.map((teacher) => {
+              const canEdit = teacherPermissions[teacher.id] || false;
+              return (
+                <tr key={teacher.id} className="border-b border-gray-100 hover:bg-gray-50">
+                  <td className="px-4 py-3 text-sm">{teacher.email}</td>
+                  <td className="px-4 py-3 text-sm">
+                    <span
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        canEdit
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      {canEdit ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => handleTogglePermission(teacher.id, canEdit)}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                        canEdit
+                          ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {canEdit ? <FaToggleOn size={18} /> : <FaToggleOff size={18} />}
+                      {canEdit ? 'Disable' : 'Enable'}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </Table>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

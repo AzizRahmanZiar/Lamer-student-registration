@@ -3,13 +3,9 @@ import { useAuth } from '../context/AuthContext';
 
 export default function ProtectedRoute({ children, allowedRoles = [] }) {
   const { user, role, approved, loading } = useAuth();
-
-  if (loading) return <div className='p-8 text-center'>Loading...</div>;
-
-  if (!user) return <Navigate to='/login' replace />;
-  if (!approved) return <Navigate to='/unauthorized' replace />;
-  if (allowedRoles.length && !allowedRoles.includes(role))
-    return <Navigate to='/unauthorized' replace />;
-
+  if (loading) return <div className="p-8 text-center">Loading...</div>;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!approved) return <Navigate to="/unauthorized" replace />;
+  if (allowedRoles.length && !allowedRoles.includes(role)) return <Navigate to="/unauthorized" replace />;
   return children;
 }
