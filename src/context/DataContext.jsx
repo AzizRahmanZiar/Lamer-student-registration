@@ -1,65 +1,59 @@
-// src/context/DataContext.js
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import {
-  collection,
-  getDocs,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  onSnapshot,
-  serverTimestamp,
-  getDoc,
-  setDoc,
+  collection, addDoc, updateDoc, deleteDoc, doc,
+  onSnapshot, serverTimestamp, getDoc, setDoc,
+  query, where, getDocs
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { useAuth } from './AuthContext';
 
 const DataContext = createContext();
+export function useData() { return useContext(DataContext); }
 
-export function useData() {
-  return useContext(DataContext);
-}
+const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 export function DataProvider({ children }) {
+  const { user, role } = useAuth();
   const [students, setStudents] = useState([]);
-  const [fees, setFees] = useState([]);
   const [monthlyFees, setMonthlyFees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [monthlyDueDay, setMonthlyDueDay] = useState(10);
+  const [teachers, setTeachers] = useState([]);
+  const [teacherPermissions, setTeacherPermissions] = useState({});
 
-  // Real-time listeners
+  const isAdmin = role === 'admin';
+  const uid = user?.uid;
+
+  // Fetch teachers and their permissions (admin only)
+  const fetchTeachersAndPermissions = async () => {
+    if (!isAdmin) return;
+    try {
+      const q = query(collection(db, 'users'), where('role', '==', 'teacher'));
+      const snapshot = await getDocs(q);
+      const teacherData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setTeachers(teacherData);
+
+      const permSnapshot = await getDocs(collection(db, 'teacherPermissions'));
+      const perms = {};
+      permSnapshot.docs.forEach(doc => {
+        perms[doc.id] = doc.data().canEdit || false;
+      });
+      setTeacherPermissions(perms);
+    } catch (error) {
+      console.error('Error fetching teachers/permissions:', error);
+    }
+  };
+
+  // Load settings & teachers on mount
   useEffect(() => {
-    // Students listener
-    const unsubStudents = onSnapshot(collection(db, 'students'), (snapshot) => {
-      const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-      setStudents(data);
-    });
+    if (!user) return;
 
-    // Monthly fees listener
-    const unsubMonthlyFees = onSnapshot(
-      collection(db, 'monthlyFees'),
-      (snapshot) => {
-        const data = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        setMonthlyFees(data);
-      },
-    );
-
-    // Fees (static fee structures) listener
-    const unsubFees = onSnapshot(collection(db, 'fees'), (snapshot) => {
-      const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-      setFees(data);
-    });
-
-    // Load settings
     const loadSettings = async () => {
       try {
-        const settingsRef = doc(db, 'settings', 'global');
-        const snap = await getDoc(settingsRef);
+        const snap = await getDoc(doc(db, 'settings', 'global'));
         if (snap.exists()) {
-          setMonthlyDueDay(snap.data().monthlyDueDay || 10);
+          const data = snap.data();
+          setMonthlyDueDay(data.monthlyDueDay || 10);
         }
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -67,163 +61,146 @@ export function DataProvider({ children }) {
         setLoading(false);
       }
     };
-
     loadSettings();
+
+    if (isAdmin) {
+      fetchTeachersAndPermissions();
+    }
+
+    // Real-time listeners for students and fees (filtered by createdBy)
+    const studentsRef = isAdmin
+      ? collection(db, 'students')
+      : query(collection(db, 'students'), where('createdBy', '==', uid));
+    const unsubStudents = onSnapshot(studentsRef, (snapshot) => {
+      setStudents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    const feesRef = isAdmin
+      ? collection(db, 'monthlyFees')
+      : query(collection(db, 'monthlyFees'), where('createdBy', '==', uid));
+    const unsubMonthlyFees = onSnapshot(feesRef, (snapshot) => {
+      setMonthlyFees(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
 
     return () => {
       unsubStudents();
       unsubMonthlyFees();
-      unsubFees();
     };
-  }, []);
+  }, [user, isAdmin, uid]);
 
-  // Helper: get current month and year
-  const getCurrentMonthYear = () => {
-    const now = new Date();
-    const monthNames = [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ];
-    return {
-      month: monthNames[now.getMonth()],
-      year: now.getFullYear(),
-      monthIndex: now.getMonth(),
-    };
+  // Helper: get current user's edit permission
+  const getCurrentUserCanEdit = () => {
+    if (isAdmin) return true;
+    if (role === 'teacher' && user) {
+      return teacherPermissions[user.uid] || false;
+    }
+    return false;
   };
 
-  // Helper: calculate total fee from fee structure
-  const calculateTotal = (feeRecord) => {
-    const subjects = [
-      'calligraphy',
-      'english',
-      'math',
-      'physics',
-      'computer',
-      'arabic',
-    ];
-    let total = 0;
-    subjects.forEach((sub) => {
-      total += parseFloat(feeRecord[sub]) || 0;
-    });
-    return total;
-  };
-
-  // Get current month collected amount
-  const getCurrentMonthCollected = () => {
-    const { month, year } = getCurrentMonthYear();
-    return monthlyFees
-      .filter(
-        (fee) =>
-          fee.month === month && fee.year === year && fee.status === 'paid',
-      )
-      .reduce((sum, fee) => sum + (fee.paidAmount || 0), 0);
-  };
-
-  // Get pending students for current month
-  const getPendingStudents = () => {
-    const { month, year } = getCurrentMonthYear();
-    const paidStudentIds = monthlyFees
-      .filter(
-        (fee) =>
-          fee.month === month && fee.year === year && fee.status === 'paid',
-      )
-      .map((fee) => fee.studentId);
-    return students.filter((student) => !paidStudentIds.includes(student.id));
-  };
-
-  // Get monthly history (last 6 months summary)
-  const getMonthlyHistory = () => {
-    const history = {};
-    monthlyFees.forEach((fee) => {
-      const key = `${fee.month} ${fee.year}`;
-      if (!history[key]) {
-        history[key] = { collected: 0, expected: 0, count: 0 };
-      }
-      if (fee.status === 'paid') {
-        history[key].collected += fee.paidAmount || 0;
-      }
-      history[key].expected += fee.totalAmount || 0;
-      history[key].count++;
-    });
-    return Object.entries(history)
-      .map(([period, data]) => ({ period, ...data }))
-      .slice(-6);
-  };
-
-  // CRUD for monthly fees
-  const addMonthlyFee = async (feeData) => {
+  // Update teacher permission
+  const updateTeacherPermission = async (teacherUid, canEdit) => {
     try {
-      await addDoc(collection(db, 'monthlyFees'), {
-        ...feeData,
-        createdAt: serverTimestamp(),
-      });
+      await setDoc(doc(db, 'teacherPermissions', teacherUid), { canEdit }, { merge: true });
+      setTeacherPermissions(prev => ({ ...prev, [teacherUid]: canEdit }));
     } catch (error) {
-      console.error('Error adding monthly fee:', error);
+      console.error('Error updating teacher permission:', error);
       throw error;
     }
   };
 
-  const updateMonthlyFee = async (id, feeData) => {
-    try {
-      const ref = doc(db, 'monthlyFees', id);
-      await updateDoc(ref, {
-        ...feeData,
-        updatedAt: serverTimestamp(),
-      });
-    } catch (error) {
-      console.error('Error updating monthly fee:', error);
-      throw error;
-    }
+  // CRUD operations with createdBy/createdByEmail
+  const addMonthlyFee = async (data) => {
+    await addDoc(collection(db, 'monthlyFees'), {
+      ...data,
+      createdBy: uid,
+      createdByEmail: user?.email || '',
+      createdAt: serverTimestamp(),
+    });
+  };
+
+  const updateMonthlyFee = async (id, data) => {
+    await updateDoc(doc(db, 'monthlyFees', id), {
+      ...data,
+      updatedAt: serverTimestamp(),
+    });
   };
 
   const deleteMonthlyFee = async (id) => {
-    try {
-      await deleteDoc(doc(db, 'monthlyFees', id));
-    } catch (error) {
-      console.error('Error deleting monthly fee:', error);
-      throw error;
-    }
+    await deleteDoc(doc(db, 'monthlyFees', id));
   };
 
-  // Update monthly due day setting
+  const addStudent = async (data) => {
+    await addDoc(collection(db, 'students'), {
+      ...data,
+      createdBy: uid,
+      createdByEmail: user?.email || '',
+      createdAt: serverTimestamp(),
+    });
+  };
+
+  const updateStudent = async (id, data) => {
+    await updateDoc(doc(db, 'students', id), {
+      ...data,
+      updatedAt: serverTimestamp(),
+    });
+  };
+
+  const deleteStudent = async (id) => {
+    await deleteDoc(doc(db, 'students', id));
+  };
+
   const updateMonthlyDueDay = async (day) => {
-    try {
-      const settingsRef = doc(db, 'settings', 'global');
-      await setDoc(settingsRef, { monthlyDueDay: day }, { merge: true });
-      setMonthlyDueDay(day);
-    } catch (error) {
-      console.error('Error updating due day:', error);
-      throw error;
-    }
+    await setDoc(doc(db, 'settings', 'global'), { monthlyDueDay: day }, { merge: true });
+    setMonthlyDueDay(day);
   };
 
-  const value = {
-    students,
-    fees,
-    monthlyFees,
-    loading,
-    monthlyDueDay,
-    calculateTotal,
-    getCurrentMonthCollected,
-    getPendingStudents,
-    getMonthlyHistory,
-    getCurrentMonthYear,
-    addMonthlyFee,
-    updateMonthlyFee,
-    deleteMonthlyFee,
-    updateMonthlyDueDay,
-    setFees, // for Fees component
+  // Helpers
+  const getCurrentMonthYear = () => {
+    const now = new Date();
+    return {
+      month: monthNames[now.getMonth()],
+      year: now.getFullYear(),
+      monthIndex: now.getMonth()
+    };
   };
 
-  return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
+  const getCurrentMonthCollected = () => {
+    const { month, year } = getCurrentMonthYear();
+    return monthlyFees
+      .filter(f => f.month === month && f.year === year && f.status === 'paid')
+      .reduce((sum, f) => sum + (f.paidAmount || 0), 0);
+  };
+
+  const getPendingStudents = () => {
+    const { month, year } = getCurrentMonthYear();
+    const paidIds = monthlyFees
+      .filter(f => f.month === month && f.year === year && f.status === 'paid')
+      .map(f => f.studentId);
+    return students.filter(s => !paidIds.includes(s.id));
+  };
+
+  return (
+    <DataContext.Provider value={{
+      students,
+      monthlyFees,
+      loading,
+      monthlyDueDay,
+      teachers,
+      teacherPermissions,
+      getCurrentUserCanEdit,
+      updateTeacherPermission,
+      getCurrentMonthCollected,
+      getPendingStudents,
+      getCurrentMonthYear,
+      addMonthlyFee,
+      updateMonthlyFee,
+      deleteMonthlyFee,
+      addStudent,
+      updateStudent,
+      deleteStudent,
+      updateMonthlyDueDay,
+    }}>
+      {children}
+    </DataContext.Provider>
+  );
 }
